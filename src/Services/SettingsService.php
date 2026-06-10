@@ -60,6 +60,10 @@ class SettingsService {
                 'max_login_attempts' => 5,       // 最大登录尝试次数
                 'lockout_duration' => 300,       // 锁定时长（秒）
             ],
+            'user' => [
+                'allow_registration' => false,   // 是否允许用户注册
+                'max_sites_per_user' => 10,      // 每个用户最多可添加的站点数
+            ],
             'performance' => [
                 'enable_cache' => true,           // 启用缓存
                 'cache_duration' => 300,          // 缓存时长（秒）
@@ -231,6 +235,32 @@ class SettingsService {
         }
     }
     
+    /**
+     * 检查是否允许用户注册
+     */
+    public function isRegistrationAllowed() {
+        return $this->getSetting('user', 'allow_registration') === true;
+    }
+
+    /**
+     * 切换用户注册开关
+     *
+     * @param bool $enabled 是否启用
+     * @return bool 保存是否成功
+     */
+    public function toggleRegistration($enabled) {
+        return $this->updateSetting('user', 'allow_registration', $enabled);
+    }
+
+    /**
+     * 获取每个用户的最大站点数限制
+     *
+     * @return int 最大站点数
+     */
+    public function getMaxSitesPerUser() {
+        return $this->getSetting('user', 'max_sites_per_user') ?? 10;
+    }
+
     /**
      * 验证设置值
      */

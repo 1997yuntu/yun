@@ -6,16 +6,32 @@
 
 class SitesService {
     private $pdo;
+    private $userService;
     
     public function __construct($pdo) {
         $this->pdo = $pdo;
+        $this->userService = new UserService($pdo);
     }
     
     /**
-     * 获取所有站点列表
+     * 获取所有站点列表（管理员）或用户的站点列表
+     *
+     * @param int|null $userId 用户 ID，null 时获取所有站点（仅管理员）
+     * @return array 站点列表
      */
-    public function getAllSites() {
+    public function getAllSites($userId = null) {
         try {
+            // 检查是否为管理员
+            $isAdmin = $this->userService->isAdmin();
+            
+            // 如果不是管理员且有 userId，验证用户只能查看自己的站点
+            if (!$isAdmin && $userId !== null) {
+                $currentUserId = $this->userService->getCurrentUserId();
+                if ($currentUserId !== $userId) {
+                    return []; // 非管理员不能查看其他用户的站点
+                }
+            }
+            
             $sql = "
                 SELECT 
                     s.*,
@@ -24,11 +40,18 @@ class SitesService {
                     MAX(p.visit_time) as last_visit
                 FROM sites s
                 LEFT JOIN pageviews p ON s.site_key = p.site_key AND p.is_bot = 0
-                GROUP BY s.id
-                ORDER BY s.created_at DESC
             ";
             
-            $stmt = $this->pdo->query($sql);
+            $params = [];
+            if ($userId !== null && !$isAdmin) {
+                $sql .= " WHERE s.user_id = ?";
+                $params[] = $userId;
+            }
+            
+            $sql .= " GROUP BY s.id ORDER BY s.created_at DESC";
+            
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
             $sites = $stmt->fetchAll();
             
             // 格式化数据
@@ -86,11 +109,30 @@ class SitesService {
     
     /**
      * 创建新站点
+     *
+     * @param int $userId 用户 ID
+     * @param array $data 站点数据
+     * @return array ['success' => bool, 'site_id' => int|null, 'site_key' => string|null, 'message' => string, 'errors' => array]
      */
-    public function createSite($data) {
+    public function createSite($userId, $data) {
         try {
+            // 检查该用户的站点数量是否超过限制
+            $settingsService = new SettingsService($this->pdo);
+            $maxSites = $settingsService->getMaxSitesPerUser();
+            
+            $userSites = $this->getAllSites($userId);
+            if (count($userSites) >= $maxSites) {
+                return [
+                    'success' => false,
+                    'site_id' => null,
+                    'site_key' => null,
+                    'message' => "您创建的站点数量已达到上限（{$maxSites}个）",
+                    'errors' => ['general' => "站点数量已达上限"]
+                ];
+            }
+            
             // 清理和标准化域名（移除协议前缀和@符号）
-            $cleanDomain = $this->cleanDomain($data['domain']);
+            $cleanDomain = $this->cleanDomain($data['domain']) ?? '';
             
             // 生成唯一的 site_key（使用清理后的域名）
             $siteKey = $this->generateSiteKey($cleanDomain);
@@ -99,19 +141,20 @@ class SitesService {
             $data['domain'] = $cleanDomain;
             $errors = $this->validateSiteData($data);
             if (!empty($errors)) {
-                return ['success' => false, 'errors' => $errors];
+                return ['success' => false, 'site_id' => null, 'site_key' => null, 'message' => '数据验证失败', 'errors' => $errors];
             }
             
             // 检查域名是否已存在（使用 $data['domain'] 保持一致）
             if ($this->isDomainExists($data['domain'])) {
-                return ['success' => false, 'errors' => ['domain' => '该域名已存在']];
+                return ['success' => false, 'site_id' => null, 'site_key' => null, 'message' => '该域名已存在', 'errors' => ['domain' => '该域名已存在']];
             }
             
-            // 插入站点数据（created_at 和 updated_at 由数据库自动设置）
-            $sql = "INSERT INTO sites (name, domain, site_key, description, status) VALUES (?, ?, ?, ?, ?)";
+            // 插入站点数据（包含 user_id）
+            $sql = "INSERT INTO sites (user_id, name, domain, site_key, description, status) VALUES (?, ?, ?, ?, ?, ?)";
             $stmt = $this->pdo->prepare($sql);
             
             $result = $stmt->execute([
+                $userId,
                 $data['name'],
                 $data['domain'],
                 $siteKey,
@@ -120,7 +163,7 @@ class SitesService {
             ]);
             
             if ($result) {
-                $siteId = $this->pdo->lastInsertId();
+                $siteId = (int) $this->pdo->lastInsertId();
                 return [
                     'success' => true, 
                     'site_id' => $siteId,
@@ -128,11 +171,11 @@ class SitesService {
                     'message' => '站点创建成功'
                 ];
             } else {
-                return ['success' => false, 'errors' => ['general' => '站点创建失败']];
+                return ['success' => false, 'site_id' => null, 'site_key' => null, 'message' => '站点创建失败', 'errors' => ['general' => '站点创建失败']];
             }
             
         } catch (Exception $e) {
-            return ['success' => false, 'errors' => ['general' => $e->getMessage()]];
+            return ['success' => false, 'site_id' => null, 'site_key' => null, 'message' => $e->getMessage(), 'errors' => ['general' => $e->getMessage()]];
         }
     }
     
@@ -180,17 +223,28 @@ class SitesService {
     
     /**
      * 删除站点
+     *
+     * @param int $userId 用户 ID（用于验证权限）
+     * @param int $id 站点 ID
+     * @return array ['success' => bool, 'message' => string]
      */
-    public function deleteSite($id) {
+    public function deleteSite($userId, $id) {
         try {
-            // 检查是否为默认站点
+            // 获取站点信息
             $site = $this->getSiteById($id);
             if (!$site) {
                 return ['success' => false, 'message' => '站点不存在'];
             }
             
+            // 检查是否为默认站点
             if ($site['site_key'] === 'default') {
                 return ['success' => false, 'message' => '默认站点不能删除'];
+            }
+            
+            // 检查权限：只有站点所有者或管理员可以删除
+            $isAdmin = $this->userService->isAdmin();
+            if (!$isAdmin && (int)$site['user_id'] !== (int)$userId) {
+                return ['success' => false, 'message' => '无权删除此站点'];
             }
             
             // 开始事务

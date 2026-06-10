@@ -1,6 +1,6 @@
 <?php
 /**
- * MVP统计系统 - 认证系统
+ * MVP 统计系统 - 认证系统
  * 处理用户登录、登出、会话管理
  */
 
@@ -8,15 +8,96 @@
  * 检查用户是否已登录
  */
 function isLoggedIn() {
-    // 检查会话中是否有登录标记
-    if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
-        // 检查会话是否过期
+    // 新版本多用户登录检查
+    if (isset($_SESSION['user_id'])) {
         if (isset($_SESSION['last_activity'])) {
             $inactive = time() - $_SESSION['last_activity'];
             if ($inactive > SESSION_LIFETIME) {
                 logout();
                 return false;
             }
+        }
+        $_SESSION['last_activity'] = time();
+        return true;
+    }
+    
+    // 兼容旧版本 admin 登录检查
+    if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
+        if (isset($_SESSION['last_activity'])) {
+            $inactive = time() - $_SESSION['last_activity'];
+            if ($inactive > SESSION_LIFETIME) {
+                logout();
+                return false;
+            }
+        }
+        $_SESSION['last_activity'] = time();
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * 要求用户必须登录（用于页面访问控制）
+ * 未登录会重定向到登录页
+ */
+function requireLogin() {
+    if (!isLoggedIn()) {
+        header('Location: /login.php');
+        exit;
+    }
+}
+
+/**
+ * 要求用户必须是管理员（用于管理页面访问控制）
+ * 非管理员会返回 403
+ */
+function requireAdmin() {
+    if (!isLoggedIn()) {
+        header('Location: /login.php');
+        exit;
+    }
+    
+    // 检查是否为 admin 角色
+    if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+        header('HTTP/1.1 403 Forbidden');
+        echo '禁止访问：需要管理员权限';
+        exit;
+    }
+}
+
+/**
+ * API 认证检查（返回 JSON 错误）
+ */
+function requireLoginAPI() {
+    session_start();
+    if (!isLoggedIn()) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => '未登录或登录已过期'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
+/**
+ * API 管理员认证检查（返回 JSON 错误）
+ */
+function requireAdminAPI() {
+    session_start();
+    if (!isLoggedIn()) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => '未登录或登录已过期'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
+    if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => '需要管理员权限'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
         }
         
         // 更新最后活动时间

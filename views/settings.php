@@ -24,16 +24,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'update_settings':
                 // 更新设置
                 $newSettings = [];
-                foreach (['display', 'data', 'dashboard', 'security', 'performance'] as $category) {
+                foreach (['display', 'data', 'dashboard', 'security', 'performance', 'user'] as $category) {
                     if (isset($_POST[$category])) {
                         $newSettings[$category] = $_POST[$category];
                     }
                 }
                 
-                // 处理复选框（未选中时不会在POST中出现）
+                // 处理复选框（未选中时不会在 POST 中出现）
                 $checkboxes = [
                     'data' => ['auto_cleanup'],
-                    'performance' => ['enable_cache', 'compress_response']
+                    'performance' => ['enable_cache', 'compress_response'],
+                    'user' => ['allow_registration']
                 ];
                 
                 foreach ($checkboxes as $category => $fields) {
@@ -41,11 +42,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $newSettings[$category] = [];
                     }
                     foreach ($fields as $field) {
-                        // 如果复选框没有在POST中，设为false
+                        // 如果复选框没有在 POST 中，设为 false
                         if (!isset($newSettings[$category][$field])) {
                             $newSettings[$category][$field] = false;
                         } else {
-                            // 如果存在，设为true
+                            // 如果存在，设为 true
                             $newSettings[$category][$field] = true;
                         }
                     }
@@ -58,6 +59,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $settings = $settingsService->getAllSettings();
                 } else {
                     $message = '设置保存失败，请重试。';
+                    $messageType = 'error';
+                }
+                break;
+                
+            case 'update_user_settings':
+                // 更新用户管理设置
+                $newUserSettings = [
+                    'user' => [
+                        'allow_registration' => isset($_POST['user']['allow_registration']) ? true : false,
+                        'max_sites_per_user' => isset($_POST['user']['max_sites_per_user']) ? (int) $_POST['user']['max_sites_per_user'] : 10
+                    ]
+                ];
+                
+                if ($settingsService->updateSettings($newUserSettings)) {
+                    $message = '用户设置已成功保存！';
+                    $messageType = 'success';
+                    // 重新获取设置
+                    $settings = $settingsService->getAllSettings();
+                } else {
+                    $message = '用户设置保存失败，请重试。';
                     $messageType = 'error';
                 }
                 break;
@@ -368,8 +389,8 @@ $currentSiteKey = $_GET['site'] ?? null;
                            required 
                            autocomplete="new-password"
                            minlength="6"
-                           placeholder="请输入新密码（至少6位）">
-                    <small class="form-help">密码长度至少为6位，建议使用字母、数字和特殊字符的组合</small>
+                           placeholder="请输入新密码（至少 6 位）">
+                    <small class="form-help">密码长度至少为 6 位，建议使用字母、数字和特殊字符的组合</small>
                 </div>
                 
                 <div class="form-group">
@@ -391,6 +412,50 @@ $currentSiteKey = $_GET['site'] ?? null;
                 <div style="text-align: center; margin-top: 24px;">
                     <button type="submit" class="btn btn-warning">
                         <i class="bi bi-key-fill"></i> 修改密码
+                    </button>
+                </div>
+            </div>
+        </form>
+        
+        <!-- 用户管理设置 -->
+        <form method="POST" class="settings-form" id="userManagementForm">
+            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+            <input type="hidden" name="action" value="update_user_settings">
+            
+            <div class="settings-section">
+                <h2 class="section-title">
+                    <i class="bi bi-people"></i>
+                    用户管理设置
+                </h2>
+                
+                <div class="form-group">
+                    <label class="form-label">
+                        <i class="bi bi-person-plus"></i> 允许用户注册
+                    </label>
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" name="user[allow_registration]" 
+                                   <?= ($settings['user']['allow_registration'] ?? false) ? 'checked' : '' ?>>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">开启后，用户可以自助注册账户</span>
+                    </div>
+                    <small class="form-help">关闭后，注册入口将隐藏，直接访问注册页面会返回 403 错误</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">
+                        <i class="bi bi-collection"></i> 每个用户最多可创建站点数
+                    </label>
+                    <input type="number" name="user[max_sites_per_user]" class="form-input" 
+                           value="<?= $settings['user']['max_sites_per_user'] ?? 10 ?>" 
+                           min="1" max="100">
+                    <small class="form-help">限制每个用户可添加的站点数量，防止滥用（1-100）</small>
+                </div>
+                
+                <div style="text-align: center; margin-top: 24px;">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg"></i> 保存用户设置
                     </button>
                 </div>
             </div>

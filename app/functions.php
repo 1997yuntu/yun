@@ -161,8 +161,26 @@ function timeAgo($datetime) {
 }
 
 /**
- * 解析User-Agent字符串，提取浏览器、操作系统、设备信息
- * 使用UserAgentService进行解析
+ * HTML 转义输出
+ * @param string $string 要转义的字符串
+ * @return string 转义后的字符串
+ */
+function e($string) {
+    return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
+}
+
+/**
+ * 安全启动 Session（避免重复调用）
+ */
+function safeSessionStart() {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+}
+
+/**
+ * 解析 User-Agent 字符串，提取浏览器、操作系统、设备信息
+ * 使用 UserAgentService 进行解析
  */
 function parseUserAgent($userAgent) {
     static $userAgentService = null;
