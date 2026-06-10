@@ -1,0 +1,23 @@
+JefCounts 极简统计系统
+
+版本: 1.1.4
+打包日期: 2025-11-20 13:15:22
+打包类型: 完整安装包
+
+=== 安装说明 ===
+1. 上传所有文件到服务器
+2. 设置 public 为网站根目录
+3. 访问域名，按照安装向导操作
+4. 完成安装
+
+系统要求：
+- PHP 7.4+
+- MySQL 5.7+
+- 支持 PDO 扩展
+
+
+
+技术支持：
+- 项目主页: http://jijian.org/
+- 作者博客: https://www.jeffer.xyz/
+- GitHub: https://github.com/Jeffer-xyz/JefCounts
